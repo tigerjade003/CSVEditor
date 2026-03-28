@@ -120,12 +120,11 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         col = self.table_widget.horizontalHeader().logicalIndexAt(position)
         menu = QtWidgets.QMenu(self)
         delete_action = menu.addAction("Delete Column")
-        cur_column_count = self.table_widget.columnCount()
         add_column_left = menu.addAction("Add Column to the Left")
         add_column_right = menu.addAction("Add Column to the Right")
         delete_action.triggered.connect(lambda: self.table_widget.removeColumn(col))
-        add_column_left.triggered.connect(lamda: self.table_widget)
-
+        add_column_left.triggered.connect(lambda: self.table_widget.insertColumn(col))
+        add_column_right.triggered.connect(lambda: self.table_widget.insertColumn(col + 1))
         menu.exec(self.table_widget.horizontalHeader().mapToGlobal(position))
 
 
@@ -140,9 +139,9 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         insert_above_action = menu.addAction("Insert Row Above")
         insert_below_action = menu.addAction("Insert Row Below")
 
-        delete_action.triggered.connect(lambda: self.delete_row(row))
-        insert_above_action.triggered.connect(lambda: self.insert_row(row))
-        insert_below_action.triggered.connect(lambda: self.insert_row(row + 1))
+        delete_action.triggered.connect(lambda: self.table_widget.removeRow(row))
+        insert_above_action.triggered.connect(lambda: self.table_widget.insertRow(row))
+        insert_below_action.triggered.connect(lambda: self.table_widget.insertRow(row + 1))
 
         menu.exec(self.table_widget.verticalHeader().mapToGlobal(position))
 
