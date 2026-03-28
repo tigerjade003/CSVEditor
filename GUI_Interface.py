@@ -65,12 +65,12 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.toolbar_layout.addWidget(self.open_file_button)
 
         self.save_button = QtWidgets.QPushButton("Save")
-        self.save_button.setVisible(False)  # hidden until a file path exists
+        self.save_button.setVisible(False)
         self.save_button.clicked.connect(self.save_file)
         self.toolbar_layout.addWidget(self.save_button)
 
         self.save_as_button = QtWidgets.QPushButton("Save As")
-        self.save_as_button.setVisible(True)  # always visible
+        self.save_as_button.setVisible(True)
         self.save_as_button.clicked.connect(self.save_file_as)
         self.toolbar_layout.addWidget(self.save_as_button)
 
@@ -111,11 +111,9 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
         redo_shortcut.activated.connect(self.undo_stack.redo)
 
-        # Start with a blank file
         self.new_file()
 
     def new_file(self):
-        """Set up a blank unsaved table."""
         self.current_file_path = None
         self._is_modified = False
         self._last_value = {}
@@ -127,7 +125,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.set_column_headers(EXTRA_COLS)
 
     def _check_unsaved_changes(self):
-        """If there are unsaved changes, prompt the user. Returns False if the action should be cancelled."""
         if self._is_modified:
             reply = QtWidgets.QMessageBox.question(
                 self, "Unsaved Changes", "You have unsaved changes. Save before continuing?",
@@ -141,7 +138,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             elif reply == QtWidgets.QMessageBox.StandardButton.No:
                 return True
             else:
-                return False  # cancelled
+                return False
         return True
 
     def set_column_headers(self, count):
@@ -151,6 +148,19 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
     def toggle_autosave(self, checked):
         if checked:
+            # Block autosave if no file path exists
+            if not self.current_file_path:
+                QtWidgets.QMessageBox.warning(
+                    self, "Autosave Unavailable",
+                    "Please save the file first before enabling autosave."
+                )
+                # Uncheck without triggering this signal again
+                self.autosave_button.blockSignals(True)
+                self.autosave_button.setChecked(False)
+                self.autosave_button.blockSignals(False)
+                self.autosave_button.setText("Autosave: Off")
+                return
+
             self.autosave_button.setText("Autosave: On")
             self.autosave_timer = QtCore.QTimer(self)
             self.autosave_timer.setInterval(2000)
@@ -159,7 +169,10 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             self.table_widget.itemChanged.connect(self.start_autosave_timer)
         else:
             self.autosave_button.setText("Autosave: Off")
-            self.table_widget.itemChanged.disconnect(self.start_autosave_timer)
+            try:
+                self.table_widget.itemChanged.disconnect(self.start_autosave_timer)
+            except RuntimeError:
+                pass
             if self.autosave_timer:
                 self.autosave_timer.stop()
 
@@ -195,7 +208,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
     def open_file(self):
         if not self._check_unsaved_changes():
-            return  # user cancelled
+            return
 
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Open File", "", "CSV Files (*.csv)"
