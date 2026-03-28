@@ -109,6 +109,8 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
         redo_shortcut.activated.connect(self.undo_stack.redo)
+        
+        self._is_modified = False
 
     def set_column_headers(self, count):
         self.table_widget.setHorizontalHeaderLabels(
@@ -166,6 +168,16 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             self, "Open File", "", "CSV Files (*.csv)"
         )
         if file_path:
+            if self.is_modified:
+                reply = QtWidgets.QMessageBox.question( 
+                    self, "Quit", "Save before opening new file?",
+                    QtWidgets.QMessageBox.Save | QtWidgets.QMessageBox.Discard | QtWidgets.QMessageBox.Cancel,
+                    QtWidgets.QMessageBox.Save
+                )
+                if reply == QtWidgets.QMessageBox.Save:
+                    self.save_file()
+            self._is_modified = False
+            self.undo_stack.clear()
             self.current_file_path = file_path
             self.file_path_label.setText(file_path)
             data = self.get_data(file_path)
@@ -252,6 +264,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         new_value = item.text()
         if old_value == new_value:
             return
+        self.is_modified = True
         self._last_value[(row, col)] = new_value
         command = EditCellCommand(self.table_widget, self, row, col, old_value, new_value)
         self.undo_stack.push(command)
@@ -303,6 +316,29 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
     def _remove_column(self, col):
         self.table_widget.removeColumn(col)
         self.set_column_headers(self.table_widget.columnCount())
+    
+    def closeEvent(self, event):
+        if self.autosave_button.isChecked() and self.current_file_path:
+            self.save_file()
+            event.accept()
+            return
+
+        if self.current_file_path and self._is_modified:
+            reply = QtWidgets.QMessageBox.question(
+                self, "Quit", "Save before closing?",
+                QtWidgets.QMessageBox.StandardButton.Yes |
+                QtWidgets.QMessageBox.StandardButton.No |
+                QtWidgets.QMessageBox.StandardButton.Cancel
+            )
+            if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+                self.save_file()
+                event.accept()
+            elif reply == QtWidgets.QMessageBox.StandardButton.No:
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
 
 
 def create_window():
