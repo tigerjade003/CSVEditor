@@ -102,12 +102,18 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             self.autosave_button.setText("Autosave: On")
             self.autosave_timer = QtCore.QTimer(self)
             self.autosave_timer.setInterval(2000)
+            self.autosave_timer.setSingleShot(True)
             self.autosave_timer.timeout.connect(self.save_file)
             self.table_widget.itemChanged.connect(self.start_autosave_timer)
         else:
             self.autosave_button.setText("Autosave: Off")
             self.table_widget.itemChanged.disconnect(self.start_autosave_timer)
-            self.autosave_timer.stop()
+            if self.autosave_timer:
+                self.autosave_timer.stop()
+
+    def start_autosave_timer(self):
+        if self.autosave_timer:
+            self.autosave_timer.start()  # restart resets the 2s countdown
 
     def start_autosave_timer(self):
         self.autosave_timer.start()
@@ -226,11 +232,11 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         add_right = menu.addAction("Add a Column to the Right")
         add_right.triggered.connect(lambda: self.table_widget.insertColumn(col + 1))
         add_left = menu.addAction("Add a Column to the Left")
-        add_left.triggered.connect(lambda: self.table_widget.insertColumn(col))
+        add_left.triggered.connect(lambda: self.table_widget.insertColumn(col if col >= 0 else 0))
         add_below = menu.addAction("Add a Row below")
         add_below.triggered.connect(lambda: self.table_widget.insertRow(row + 1))
         add_above = menu.addAction("Add a Row above")
-        add_above.triggered.connect(lambda: self.table_widget.insertRow(row))
+        add_above.triggered.connect(lambda: self.table_widget.insertRow(row if row >= 0 else 0))
         delete_row = menu.addAction("Delete this Row")
         delete_row.triggered.connect(lambda: self.table_widget.removeRow(row))
         delete_column = menu.addAction("Delete this Column")
