@@ -1,15 +1,14 @@
 import sys
-import file_reader
 import pandas as pd
 import PyQt6.QtWidgets as QtWidgets
 import PyQt6.QtGui as QtGui
 import PyQt6.QtCore as QtCore
+import pandas as pd
 
 
 class CSVEditorWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-
         self.setWindowTitle("CSV Editor")
         self.setGeometry(100, 100, 800, 600)
         self.current_file_path = None
@@ -62,6 +61,23 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         save_as_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+S"), self)
         save_as_shortcut.activated.connect(self.save_file_as)
 
+    def get_data(path = None):
+        if path is None:
+            raise ValueError("Path must be provided.")
+        if not path.endswith('.csv'):
+            raise ValueError("File must be a CSV file.")
+        data = pd.read_csv(path)
+        return data
+
+    def write_data(data = None, path = None):
+        if data is None:
+            raise ValueError("Data must be provided.")
+        if not isinstance(data, pd.DataFrame):
+            raise ValueError("Data must be a pandas DataFrame.")
+        if path is None:
+            raise ValueError("Path must be provided.")
+        data.to_csv(path, index=False)
+
     def open_file(self):
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Open File", "", "CSV Files (*.csv)"
@@ -69,7 +85,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         if file_path:
             self.current_file_path = file_path
             self.file_path_label.setText(file_path)
-            data = file_reader.get_data(file_path)
+            data = self.get_data(file_path)
             self.table_widget.setRowCount(data.shape[0])
             self.table_widget.setColumnCount(data.shape[1])
             self.table_widget.setHorizontalHeaderLabels(list(data.columns))
@@ -96,7 +112,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         if not self.current_file_path:
             self.save_file_as()
             return
-        file_reader.write_data(self.get_table_data(), self.current_file_path)
+        self.write_data(self.get_table_data(), self.current_file_path)
 
     def save_file_as(self):
         file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -105,15 +121,24 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         if file_path:
             self.current_file_path = file_path
             self.file_path_label.setText(file_path)
-            file_reader.write_data(self.get_table_data(), file_path)
+            self.write_data(self.get_table_data(), file_path)
+
     def show_context_menu(self, position):
         menu = QtWidgets.QMenu(self)
+        col = self.table_widget.horizontalHeader().logicalIndexAt(position)
+        row = self.table_widget.verticalHeader().logicalIndexAt(position)
         add_right = menu.addAction("Add a Column to the Right")
+        add_right.triggered.connect(lambda: self.table_widget.insertColumn(col+1))
         add_left = menu.addAction("Add a Column to the Left")
+        add_left.triggered.connect(lambda: self.table_widget.insertColumn(col))
         add_below = menu.addAction("Add a Row below")
+        add_below.triggered.connect(lambda: self.table_widget.insertRow(row+1))
         add_above = menu.addAction("Add a Row above")
+        add_above.triggered.connect(lambda: self.table_widget.insertRow(row))
         delete_row = menu.addAction("Delete this Row")
+        delete_row.triggered.connect(lambda: self.table_widget.removeRow(row))
         delete_column = menu.addAction("Delete this Column")
+        delete_column.triggered.connect(lambda: self.table_widget.removeColumn(col))
         menu.exec(self.table_widget.viewport().mapToGlobal(position))
 
     def show_column_header_context_menu(self, position):
@@ -126,7 +151,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         add_column_left.triggered.connect(lambda: self.table_widget.insertColumn(col))
         add_column_right.triggered.connect(lambda: self.table_widget.insertColumn(col + 1))
         menu.exec(self.table_widget.horizontalHeader().mapToGlobal(position))
-
 
     def on_column_header_clicked(self, col):
         print(f"Left clicked column {col}: {self.table_widget.horizontalHeaderItem(col).text()}")
@@ -146,7 +170,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         menu.exec(self.table_widget.verticalHeader().mapToGlobal(position))
 
     def on_row_header_clicked(self, row):
-        print(f"Left clicked row {row}")
+        print(f"Left clicked row {row}: {self.table_widget.horizontalHeaderItem(row).text()}")
 
 
 def create_window():
@@ -154,6 +178,7 @@ def create_window():
     window = CSVEditorWindow()
     window.show()
     app.exec()
+
 
 
 create_window()
