@@ -3,7 +3,29 @@ import pandas as pd
 import PyQt6.QtWidgets as QtWidgets
 import PyQt6.QtGui as QtGui
 import PyQt6.QtCore as QtCore
-import pandas as pd
+
+
+class EditCellCommand(QtGui.QUndoCommand):
+    def __init__(self, table_widget, window, row, col, old_value, new_value):
+        super().__init__()
+        self.table_widget = table_widget
+        self.window = window
+        self.row = row
+        self.col = col
+        self.old_value = old_value
+        self.new_value = new_value
+
+    def undo(self):
+        self.window._is_undoing = True
+        self.table_widget.item(self.row, self.col).setText(self.old_value)
+        self.window._last_value[(self.row, self.col)] = self.old_value
+        self.window._is_undoing = False
+
+    def redo(self):
+        self.window._is_undoing = True
+        self.table_widget.item(self.row, self.col).setText(self.new_value)
+        self.window._last_value[(self.row, self.col)] = self.new_value
+        self.window._is_undoing = False
 
 
 class CSVEditorWindow(QtWidgets.QMainWindow):
@@ -12,6 +34,8 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("CSV Editor")
         self.setGeometry(100, 100, 800, 600)
         self.current_file_path = None
+        self._last_value = {}
+        self._is_undoing = False
 
         self.central_widget = QtWidgets.QWidget()
         self.setCentralWidget(self.central_widget)
@@ -27,10 +51,12 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.toolbar_layout.addWidget(self.open_file_button)
 
         self.save_button = QtWidgets.QPushButton("Save")
+        self.save_button.setVisible(False)
         self.save_button.clicked.connect(self.save_file)
         self.toolbar_layout.addWidget(self.save_button)
 
         self.save_as_button = QtWidgets.QPushButton("Save As")
+        self.save_as_button.setVisible(False)
         self.save_as_button.clicked.connect(self.save_file_as)
         self.toolbar_layout.addWidget(self.save_as_button)
 
@@ -39,6 +65,9 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         self.table_widget = QtWidgets.QTableWidget()
         self.vertical_layout.addWidget(self.table_widget)
+
+        self.table_widget.itemPressed.connect(self.on_cell_pressed)
+        self.table_widget.itemChanged.connect(self.on_cell_changed)
 
         self.table_widget.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_widget.customContextMenuRequested.connect(self.show_context_menu)
@@ -61,15 +90,26 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         save_as_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+S"), self)
         save_as_shortcut.activated.connect(self.save_file_as)
 
-    def get_data(path = None):
+        # Undo/Redo
+        self.undo_stack = QtGui.QUndoStack(self)
+
+        undo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
+        undo_shortcut.activated.connect(self.undo_stack.undo)
+
+        redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
+        redo_shortcut.activated.connect(self.undo_stack.redo)
+
+    def get_data(self, path=None):
         if path is None:
             raise ValueError("Path must be provided.")
         if not path.endswith('.csv'):
             raise ValueError("File must be a CSV file.")
+        self.save_as_button.setVisible(True)
+        self.save_button.setVisible(True)
         data = pd.read_csv(path)
         return data
 
-    def write_data(data = None, path = None):
+    def write_data(self, data=None, path=None):
         if data is None:
             raise ValueError("Data must be provided.")
         if not isinstance(data, pd.DataFrame):
@@ -123,16 +163,31 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             self.file_path_label.setText(file_path)
             self.write_data(self.get_table_data(), file_path)
 
+    def on_cell_pressed(self, item):
+        self._last_value[(item.row(), item.column())] = item.text()
+
+    def on_cell_changed(self, item):
+        if self._is_undoing:
+            return
+        row, col = item.row(), item.column()
+        old_value = self._last_value.get((row, col), "")
+        new_value = item.text()
+        if old_value == new_value:
+            return
+        self._last_value[(row, col)] = new_value
+        command = EditCellCommand(self.table_widget, self, row, col, old_value, new_value)
+        self.undo_stack.push(command)
+
     def show_context_menu(self, position):
         menu = QtWidgets.QMenu(self)
         col = self.table_widget.horizontalHeader().logicalIndexAt(position)
         row = self.table_widget.verticalHeader().logicalIndexAt(position)
         add_right = menu.addAction("Add a Column to the Right")
-        add_right.triggered.connect(lambda: self.table_widget.insertColumn(col+1))
+        add_right.triggered.connect(lambda: self.table_widget.insertColumn(col + 1))
         add_left = menu.addAction("Add a Column to the Left")
         add_left.triggered.connect(lambda: self.table_widget.insertColumn(col))
         add_below = menu.addAction("Add a Row below")
-        add_below.triggered.connect(lambda: self.table_widget.insertRow(row+1))
+        add_below.triggered.connect(lambda: self.table_widget.insertRow(row + 1))
         add_above = menu.addAction("Add a Row above")
         add_above.triggered.connect(lambda: self.table_widget.insertRow(row))
         delete_row = menu.addAction("Delete this Row")
@@ -158,19 +213,16 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
     def show_row_header_context_menu(self, position):
         row = self.table_widget.verticalHeader().logicalIndexAt(position)
         menu = QtWidgets.QMenu(self)
-
         delete_action = menu.addAction("Delete Row")
         insert_above_action = menu.addAction("Insert Row Above")
         insert_below_action = menu.addAction("Insert Row Below")
-
         delete_action.triggered.connect(lambda: self.table_widget.removeRow(row))
         insert_above_action.triggered.connect(lambda: self.table_widget.insertRow(row))
         insert_below_action.triggered.connect(lambda: self.table_widget.insertRow(row + 1))
-
         menu.exec(self.table_widget.verticalHeader().mapToGlobal(position))
 
     def on_row_header_clicked(self, row):
-        print(f"Left clicked row {row}: {self.table_widget.horizontalHeaderItem(row).text()}")
+        print(f"Left clicked row {row}")
 
 
 def create_window():
@@ -178,7 +230,6 @@ def create_window():
     window = CSVEditorWindow()
     window.show()
     app.exec()
-
 
 
 create_window()
