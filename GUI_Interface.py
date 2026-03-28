@@ -48,6 +48,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.current_file_path = None
         self._last_value = {}
         self._is_undoing = False
+        self._is_modified = False
         self.autosave_timer = None
 
         self.central_widget = QtWidgets.QWidget()
@@ -64,12 +65,12 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.toolbar_layout.addWidget(self.open_file_button)
 
         self.save_button = QtWidgets.QPushButton("Save")
-        self.save_button.setVisible(False)
+        self.save_button.setVisible(False)  # hidden until a file path exists
         self.save_button.clicked.connect(self.save_file)
         self.toolbar_layout.addWidget(self.save_button)
 
         self.save_as_button = QtWidgets.QPushButton("Save As")
-        self.save_as_button.setVisible(False)
+        self.save_as_button.setVisible(True)  # always visible
         self.save_as_button.clicked.connect(self.save_file_as)
         self.toolbar_layout.addWidget(self.save_as_button)
 
@@ -78,7 +79,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.autosave_button.toggled.connect(self.toggle_autosave)
         self.toolbar_layout.addWidget(self.autosave_button)
 
-        self.file_path_label = QtWidgets.QLabel("No file selected")
+        self.file_path_label = QtWidgets.QLabel("New File")
         self.toolbar_layout.addWidget(self.file_path_label)
 
         self.table_widget = QtWidgets.QTableWidget()
@@ -109,8 +110,39 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
         redo_shortcut.activated.connect(self.undo_stack.redo)
-        
+
+        # Start with a blank file
+        self.new_file()
+
+    def new_file(self):
+        """Set up a blank unsaved table."""
+        self.current_file_path = None
         self._is_modified = False
+        self._last_value = {}
+        self.undo_stack.clear()
+        self.file_path_label.setText("New File")
+        self.save_button.setVisible(False)
+        self.table_widget.setRowCount(EXTRA_ROWS)
+        self.table_widget.setColumnCount(EXTRA_COLS)
+        self.set_column_headers(EXTRA_COLS)
+
+    def _check_unsaved_changes(self):
+        """If there are unsaved changes, prompt the user. Returns False if the action should be cancelled."""
+        if self._is_modified:
+            reply = QtWidgets.QMessageBox.question(
+                self, "Unsaved Changes", "You have unsaved changes. Save before continuing?",
+                QtWidgets.QMessageBox.StandardButton.Yes |
+                QtWidgets.QMessageBox.StandardButton.No |
+                QtWidgets.QMessageBox.StandardButton.Cancel
+            )
+            if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+                self.save_file()
+                return True
+            elif reply == QtWidgets.QMessageBox.StandardButton.No:
+                return True
+            else:
+                return False  # cancelled
+        return True
 
     def set_column_headers(self, count):
         self.table_widget.setHorizontalHeaderLabels(
@@ -140,8 +172,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             raise ValueError("Path must be provided.")
         if not path.endswith('.csv'):
             raise ValueError("File must be a CSV file.")
-        self.save_as_button.setVisible(True)
-        self.save_button.setVisible(True)
         try:
             data = pd.read_csv(path)
         except Exception:
@@ -164,22 +194,19 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             self.showFullScreen()
 
     def open_file(self):
+        if not self._check_unsaved_changes():
+            return  # user cancelled
+
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Open File", "", "CSV Files (*.csv)"
         )
         if file_path:
-            if self.is_modified:
-                reply = QtWidgets.QMessageBox.question( 
-                    self, "Quit", "Save before opening new file?",
-                    QtWidgets.QMessageBox.Save | QtWidgets.QMessageBox.Discard | QtWidgets.QMessageBox.Cancel,
-                    QtWidgets.QMessageBox.Save
-                )
-                if reply == QtWidgets.QMessageBox.Save:
-                    self.save_file()
             self._is_modified = False
             self.undo_stack.clear()
             self.current_file_path = file_path
             self.file_path_label.setText(file_path)
+            self.save_button.setVisible(True)
+            self.save_as_button.setVisible(True)
             data = self.get_data(file_path)
 
             if data.empty:
@@ -189,7 +216,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
                 return
 
             num_cols = data.shape[1] + EXTRA_COLS
-            num_rows = data.shape[0] + 1 + EXTRA_ROWS  # +1 for header row
+            num_rows = data.shape[0] + 1 + EXTRA_ROWS
 
             self.table_widget.setRowCount(num_rows)
             self.table_widget.setColumnCount(num_cols)
@@ -208,13 +235,11 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         rows = self.table_widget.rowCount()
         cols = self.table_widget.columnCount()
 
-        # Read headers from row 0
         headers = []
         for j in range(cols):
             item = self.table_widget.item(0, j)
             headers.append(item.text() if item else "")
 
-        # Read data rows
         data = []
         for i in range(1, rows):
             row = []
@@ -228,7 +253,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         # Drop completely empty rows
         df = df[~df.apply(lambda row: all(v == "" for v in row), axis=1)]
 
-        # Drop completely empty columns (header is empty AND all values are empty)
+        # Drop completely empty columns
         non_empty_cols = [
             j for j, h in enumerate(df.columns)
             if h != "" or df.iloc[:, j].apply(lambda v: v != "").any()
@@ -243,6 +268,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             return
         try:
             self.write_data(self.get_table_data(), self.current_file_path)
+            self._is_modified = False
         except Exception:
             with open(self.current_file_path, 'w') as f:
                 f.write('')
@@ -254,7 +280,9 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         if file_path:
             self.current_file_path = file_path
             self.file_path_label.setText(file_path)
+            self.save_button.setVisible(True)
             self.write_data(self.get_table_data(), file_path)
+            self._is_modified = False
 
     def on_cell_changed(self, item):
         if self._is_undoing:
@@ -264,7 +292,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         new_value = item.text()
         if old_value == new_value:
             return
-        self.is_modified = True
+        self._is_modified = True
         self._last_value[(row, col)] = new_value
         command = EditCellCommand(self.table_widget, self, row, col, old_value, new_value)
         self.undo_stack.push(command)
@@ -316,14 +344,14 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
     def _remove_column(self, col):
         self.table_widget.removeColumn(col)
         self.set_column_headers(self.table_widget.columnCount())
-    
+
     def closeEvent(self, event):
         if self.autosave_button.isChecked() and self.current_file_path:
             self.save_file()
             event.accept()
             return
 
-        if self.current_file_path and self._is_modified:
+        if self._is_modified:
             reply = QtWidgets.QMessageBox.question(
                 self, "Quit", "Save before closing?",
                 QtWidgets.QMessageBox.StandardButton.Yes |
