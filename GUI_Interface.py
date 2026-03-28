@@ -79,7 +79,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         self.table_widget.verticalHeader().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_widget.verticalHeader().customContextMenuRequested.connect(self.show_row_header_context_menu)
-        self.table_widget.verticalHeader().sectionClicked.connect(self.on_row_header_clicked)
 
         self.table_widget.setStyleSheet("QTableWidget QLineEdit { background-color: black; }")
 
@@ -178,7 +177,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         cols = self.table_widget.columnCount()
         try:
             headers = [self.table_widget.horizontalHeaderItem(j).text() for j in range(cols)]
-        except Exception as e:
+        except Exception as _:
             headers = [f"Column {j+1}" for j in range(cols)]
         data = []
         for i in range(rows):
@@ -260,8 +259,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         insert_below_action.triggered.connect(lambda: self.table_widget.insertRow(row + 1))
         menu.exec(self.table_widget.verticalHeader().mapToGlobal(position))
 
-    def on_row_header_clicked(self, row):
-        print(f"Left clicked row {row}")
 
 
 def create_window():
