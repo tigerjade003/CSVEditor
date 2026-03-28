@@ -65,8 +65,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         self.table_widget = QtWidgets.QTableWidget()
         self.vertical_layout.addWidget(self.table_widget)
-
-        self.table_widget.itemPressed.connect(self.on_cell_pressed)
         self.table_widget.itemChanged.connect(self.on_cell_changed)
 
         self.table_widget.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
@@ -74,7 +72,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         self.table_widget.horizontalHeader().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_widget.horizontalHeader().customContextMenuRequested.connect(self.show_column_header_context_menu)
-        self.table_widget.horizontalHeader().sectionClicked.connect(self.on_column_header_clicked)
 
         self.table_widget.verticalHeader().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_widget.verticalHeader().customContextMenuRequested.connect(self.show_row_header_context_menu)
@@ -93,6 +90,16 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
         redo_shortcut.activated.connect(self.undo_stack.redo)
+
+        self.table_widget.horizontalHeader().sectionDoubleClicked.connect(self.on_column_header_double_clicked)
+    
+    def on_column_header_double_clicked(self, col):
+        old_name = self.table_widget.horizontalHeaderItem(col).text()
+        new_name, ok = QtWidgets.QInputDialog.getText(
+            self, "Rename Column", "Enter new column name:", text=old_name
+        )
+        if ok and new_name and new_name != old_name:
+            self.table_widget.horizontalHeaderItem(col).setText(new_name)
 
     def get_data(self, path=None):
         if path is None:
@@ -164,9 +171,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             self.file_path_label.setText(file_path)
             self.write_data(self.get_table_data(), file_path)
 
-    def on_cell_pressed(self, item):
-        self._last_value[(item.row(), item.column())] = item.text()
-
     def on_cell_changed(self, item):
         if self._is_undoing:
             return
@@ -207,9 +211,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         add_column_left.triggered.connect(lambda: self.table_widget.insertColumn(col))
         add_column_right.triggered.connect(lambda: self.table_widget.insertColumn(col + 1))
         menu.exec(self.table_widget.horizontalHeader().mapToGlobal(position))
-
-    def on_column_header_clicked(self, col):
-        print(f"Left clicked column {col}: {self.table_widget.horizontalHeaderItem(col).text()}")
 
     def show_row_header_context_menu(self, position):
         row = self.table_widget.verticalHeader().logicalIndexAt(position)
