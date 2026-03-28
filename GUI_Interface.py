@@ -27,7 +27,6 @@ class EditCellCommand(QtGui.QUndoCommand):
         self.window._last_value[(self.row, self.col)] = self.new_value
         self.window._is_undoing = False
 
-
 class CSVEditorWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -76,7 +75,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.table_widget.verticalHeader().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_widget.verticalHeader().customContextMenuRequested.connect(self.show_row_header_context_menu)
         self.table_widget.verticalHeader().sectionClicked.connect(self.on_row_header_clicked)
-
+        self.table_widget.setStyleSheet("QTableWidget QLineEdit { background-color: black; }")
         save_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+S"), self)
         save_shortcut.activated.connect(self.save_file)
 
@@ -90,9 +89,8 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
         redo_shortcut.activated.connect(self.undo_stack.redo)
-
         self.table_widget.horizontalHeader().sectionDoubleClicked.connect(self.on_column_header_double_clicked)
-    
+
     def on_column_header_double_clicked(self, col):
         old_name = self.table_widget.horizontalHeaderItem(col).text()
         new_name, ok = QtWidgets.QInputDialog.getText(
