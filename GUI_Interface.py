@@ -4,6 +4,9 @@ import PyQt6.QtWidgets as QtWidgets
 import PyQt6.QtGui as QtGui
 import PyQt6.QtCore as QtCore
 
+EXTRA_ROWS = 100
+EXTRA_COLS = 10
+
 
 class EditCellCommand(QtGui.QUndoCommand):
     def __init__(self, table_widget, window, row, col, old_value, new_value):
@@ -29,9 +32,8 @@ class EditCellCommand(QtGui.QUndoCommand):
 
 
 def col_index_to_letters(n):
-    """Convert 0-based column index to spreadsheet-style letters: A, B, ..., Z, AA, AB, ..."""
     result = ""
-    n += 1  # make 1-based
+    n += 1
     while n > 0:
         n, remainder = divmod(n - 1, 26)
         result = chr(65 + remainder) + result
@@ -109,7 +111,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         redo_shortcut.activated.connect(self.undo_stack.redo)
 
     def set_column_headers(self, count):
-        """Set column headers to spreadsheet-style letters."""
         self.table_widget.setHorizontalHeaderLabels(
             [col_index_to_letters(i) for i in range(count)]
         )
@@ -168,20 +169,25 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             self.current_file_path = file_path
             self.file_path_label.setText(file_path)
             data = self.get_data(file_path)
+
             if data.empty:
-                self.table_widget.setRowCount(0)
-                self.table_widget.setColumnCount(0)
+                self.table_widget.setRowCount(EXTRA_ROWS)
+                self.table_widget.setColumnCount(EXTRA_COLS)
+                self.set_column_headers(EXTRA_COLS)
                 return
-            num_cols = data.shape[1]
-            num_rows = data.shape[0] + 1 
+
+            num_cols = data.shape[1] + EXTRA_COLS
+            num_rows = data.shape[0] + 1 + EXTRA_ROWS  # +1 for header row
 
             self.table_widget.setRowCount(num_rows)
             self.table_widget.setColumnCount(num_cols)
             self.set_column_headers(num_cols)
+
             for j, col_name in enumerate(data.columns):
                 self.table_widget.setItem(0, j, QtWidgets.QTableWidgetItem(str(col_name)))
+
             for i in range(data.shape[0]):
-                for j in range(num_cols):
+                for j in range(data.shape[1]):
                     self.table_widget.setItem(
                         i + 1, j, QtWidgets.QTableWidgetItem(str(data.iloc[i, j]))
                     )
@@ -189,11 +195,14 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
     def get_table_data(self):
         rows = self.table_widget.rowCount()
         cols = self.table_widget.columnCount()
+
+        # Read headers from row 0
         headers = []
         for j in range(cols):
             item = self.table_widget.item(0, j)
-            headers.append(item.text() if item else f"Column {j + 1}")
+            headers.append(item.text() if item else "")
 
+        # Read data rows
         data = []
         for i in range(1, rows):
             row = []
@@ -202,7 +211,19 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
                 row.append(item.text() if item else "")
             data.append(row)
 
-        return pd.DataFrame(data, columns=headers)
+        df = pd.DataFrame(data, columns=headers)
+
+        # Drop completely empty rows
+        df = df[~df.apply(lambda row: all(v == "" for v in row), axis=1)]
+
+        # Drop completely empty columns (header is empty AND all values are empty)
+        non_empty_cols = [
+            j for j, h in enumerate(df.columns)
+            if h != "" or df.iloc[:, j].apply(lambda v: v != "").any()
+        ]
+        df = df.iloc[:, non_empty_cols]
+
+        return df
 
     def save_file(self):
         if not self.current_file_path:
@@ -276,12 +297,10 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         menu.exec(self.table_widget.verticalHeader().mapToGlobal(position))
 
     def _insert_column(self, col):
-        """Insert a column and update all letter headers."""
         self.table_widget.insertColumn(col)
         self.set_column_headers(self.table_widget.columnCount())
 
     def _remove_column(self, col):
-        """Remove a column and update all letter headers."""
         self.table_widget.removeColumn(col)
         self.set_column_headers(self.table_widget.columnCount())
 
