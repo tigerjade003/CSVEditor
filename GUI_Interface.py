@@ -59,6 +59,11 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.save_as_button.clicked.connect(self.save_file_as)
         self.toolbar_layout.addWidget(self.save_as_button)
 
+        self.autosave_button = QtWidgets.QPushButton("Autosave: Off")
+        self.autosave_button.setCheckable(True)
+        self.autosave_button.toggled.connect(self.toggle_autosave)
+        self.toolbar_layout.addWidget(self.autosave_button)
+
         self.file_path_label = QtWidgets.QLabel("No file selected")
         self.toolbar_layout.addWidget(self.file_path_label)
 
@@ -75,7 +80,9 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.table_widget.verticalHeader().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_widget.verticalHeader().customContextMenuRequested.connect(self.show_row_header_context_menu)
         self.table_widget.verticalHeader().sectionClicked.connect(self.on_row_header_clicked)
+
         self.table_widget.setStyleSheet("QTableWidget QLineEdit { background-color: black; }")
+
         save_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+S"), self)
         save_shortcut.activated.connect(self.save_file)
 
@@ -90,6 +97,21 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
         redo_shortcut.activated.connect(self.undo_stack.redo)
         self.table_widget.horizontalHeader().sectionDoubleClicked.connect(self.on_column_header_double_clicked)
+
+    def toggle_autosave(self, checked):
+        if checked:
+            self.autosave_button.setText("Autosave: On")
+            self.autosave_timer = QtCore.QTimer(self)
+            self.autosave_timer.setInterval(2000)
+            self.autosave_timer.timeout.connect(self.save_file)
+            self.table_widget.itemChanged.connect(self.start_autosave_timer)
+        else:
+            self.autosave_button.setText("Autosave: Off")
+            self.table_widget.itemChanged.disconnect(self.start_autosave_timer)
+            self.autosave_timer.stop()
+
+    def start_autosave_timer(self):
+        self.autosave_timer.start()
 
     def on_column_header_double_clicked(self, col):
         old_name = self.table_widget.horizontalHeaderItem(col).text()
