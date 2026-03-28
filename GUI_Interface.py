@@ -27,6 +27,17 @@ class EditCellCommand(QtGui.QUndoCommand):
         self.window._last_value[(self.row, self.col)] = self.new_value
         self.window._is_undoing = False
 
+
+def col_index_to_letters(n):
+    """Convert 0-based column index to spreadsheet-style letters: A, B, ..., Z, AA, AB, ..."""
+    result = ""
+    n += 1  # make 1-based
+    while n > 0:
+        n, remainder = divmod(n - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
 class CSVEditorWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -35,6 +46,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.current_file_path = None
         self._last_value = {}
         self._is_undoing = False
+        self.autosave_timer = None
 
         self.central_widget = QtWidgets.QWidget()
         self.setCentralWidget(self.central_widget)
@@ -95,7 +107,12 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
         redo_shortcut.activated.connect(self.undo_stack.redo)
-        self.table_widget.horizontalHeader().sectionDoubleClicked.connect(self.on_column_header_double_clicked)
+
+    def set_column_headers(self, count):
+        """Set column headers to spreadsheet-style letters."""
+        self.table_widget.setHorizontalHeaderLabels(
+            [col_index_to_letters(i) for i in range(count)]
+        )
 
     def toggle_autosave(self, checked):
         if checked:
@@ -113,21 +130,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
     def start_autosave_timer(self):
         if self.autosave_timer:
-            self.autosave_timer.start()  # restart resets the 2s countdown
-
-    def start_autosave_timer(self):
-        self.autosave_timer.start()
-
-    def on_column_header_double_clicked(self, col):
-        try:
-            old_name = self.table_widget.horizontalHeader(col).text()
-        except Exception as _:
-            old_name = "Column {}".format(col + 1)
-        new_name, ok = QtWidgets.QInputDialog.getText(
-            self, "Rename Column", "Enter new column name:", text=old_name
-        )
-        if ok and new_name and new_name != old_name:
-            self.table_widget.horizontalHeaderItem(col).setText(new_name)
+            self.autosave_timer.start()
 
     def get_data(self, path=None):
         if path is None:
@@ -138,7 +141,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.save_button.setVisible(True)
         try:
             data = pd.read_csv(path)
-        except Exception as e:
+        except Exception:
             data = pd.DataFrame()
         return data
 
@@ -169,29 +172,36 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
                 self.table_widget.setRowCount(0)
                 self.table_widget.setColumnCount(0)
                 return
-            self.table_widget.setRowCount(data.shape[0])
-            self.table_widget.setColumnCount(data.shape[1])
-            self.table_widget.setHorizontalHeaderLabels(list(data.columns))
+            num_cols = data.shape[1]
+            num_rows = data.shape[0] + 1 
+
+            self.table_widget.setRowCount(num_rows)
+            self.table_widget.setColumnCount(num_cols)
+            self.set_column_headers(num_cols)
+            for j, col_name in enumerate(data.columns):
+                self.table_widget.setItem(0, j, QtWidgets.QTableWidgetItem(str(col_name)))
             for i in range(data.shape[0]):
-                for j in range(data.shape[1]):
+                for j in range(num_cols):
                     self.table_widget.setItem(
-                        i, j, QtWidgets.QTableWidgetItem(str(data.iloc[i, j]))
+                        i + 1, j, QtWidgets.QTableWidgetItem(str(data.iloc[i, j]))
                     )
 
     def get_table_data(self):
         rows = self.table_widget.rowCount()
         cols = self.table_widget.columnCount()
-        try:
-            headers = [self.table_widget.horizontalHeaderItem(j).text() for j in range(cols)]
-        except Exception as _:
-            headers = [f"Column {j+1}" for j in range(cols)]
+        headers = []
+        for j in range(cols):
+            item = self.table_widget.item(0, j)
+            headers.append(item.text() if item else f"Column {j + 1}")
+
         data = []
-        for i in range(rows):
+        for i in range(1, rows):
             row = []
             for j in range(cols):
                 item = self.table_widget.item(i, j)
                 row.append(item.text() if item else "")
             data.append(row)
+
         return pd.DataFrame(data, columns=headers)
 
     def save_file(self):
@@ -200,9 +210,9 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             return
         try:
             self.write_data(self.get_table_data(), self.current_file_path)
-        except Exception as _:
+        except Exception:
             with open(self.current_file_path, 'w') as f:
-                f.write('') 
+                f.write('')
 
     def save_file_as(self):
         file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -230,9 +240,9 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         col = self.table_widget.horizontalHeader().logicalIndexAt(position)
         row = self.table_widget.verticalHeader().logicalIndexAt(position)
         add_right = menu.addAction("Add a Column to the Right")
-        add_right.triggered.connect(lambda: self.table_widget.insertColumn(col + 1))
+        add_right.triggered.connect(lambda: self._insert_column(col + 1))
         add_left = menu.addAction("Add a Column to the Left")
-        add_left.triggered.connect(lambda: self.table_widget.insertColumn(col if col >= 0 else 0))
+        add_left.triggered.connect(lambda: self._insert_column(col if col >= 0 else 0))
         add_below = menu.addAction("Add a Row below")
         add_below.triggered.connect(lambda: self.table_widget.insertRow(row + 1))
         add_above = menu.addAction("Add a Row above")
@@ -240,7 +250,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         delete_row = menu.addAction("Delete this Row")
         delete_row.triggered.connect(lambda: self.table_widget.removeRow(row))
         delete_column = menu.addAction("Delete this Column")
-        delete_column.triggered.connect(lambda: self.table_widget.removeColumn(col))
+        delete_column.triggered.connect(lambda: self._remove_column(col))
         menu.exec(self.table_widget.viewport().mapToGlobal(position))
 
     def show_column_header_context_menu(self, position):
@@ -249,9 +259,9 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         delete_action = menu.addAction("Delete Column")
         add_column_left = menu.addAction("Add Column to the Left")
         add_column_right = menu.addAction("Add Column to the Right")
-        delete_action.triggered.connect(lambda: self.table_widget.removeColumn(col))
-        add_column_left.triggered.connect(lambda: self.table_widget.insertColumn(col))
-        add_column_right.triggered.connect(lambda: self.table_widget.insertColumn(col + 1))
+        delete_action.triggered.connect(lambda: self._remove_column(col))
+        add_column_left.triggered.connect(lambda: self._insert_column(col))
+        add_column_right.triggered.connect(lambda: self._insert_column(col + 1))
         menu.exec(self.table_widget.horizontalHeader().mapToGlobal(position))
 
     def show_row_header_context_menu(self, position):
@@ -265,6 +275,15 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         insert_below_action.triggered.connect(lambda: self.table_widget.insertRow(row + 1))
         menu.exec(self.table_widget.verticalHeader().mapToGlobal(position))
 
+    def _insert_column(self, col):
+        """Insert a column and update all letter headers."""
+        self.table_widget.insertColumn(col)
+        self.set_column_headers(self.table_widget.columnCount())
+
+    def _remove_column(self, col):
+        """Remove a column and update all letter headers."""
+        self.table_widget.removeColumn(col)
+        self.set_column_headers(self.table_widget.columnCount())
 
 
 def create_window():
