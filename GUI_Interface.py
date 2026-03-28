@@ -114,7 +114,10 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.autosave_timer.start()
 
     def on_column_header_double_clicked(self, col):
-        old_name = self.table_widget.horizontalHeaderItem(col).text()
+        try:
+            old_name = self.table_widget.horizontalHeader(col).text()
+        except Exception as _:
+            old_name = "Column {}".format(col + 1)
         new_name, ok = QtWidgets.QInputDialog.getText(
             self, "Rename Column", "Enter new column name:", text=old_name
         )
@@ -128,7 +131,10 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             raise ValueError("File must be a CSV file.")
         self.save_as_button.setVisible(True)
         self.save_button.setVisible(True)
-        data = pd.read_csv(path)
+        try:
+            data = pd.read_csv(path)
+        except Exception as e:
+            data = pd.DataFrame()
         return data
 
     def write_data(self, data=None, path=None):
@@ -154,6 +160,10 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             self.current_file_path = file_path
             self.file_path_label.setText(file_path)
             data = self.get_data(file_path)
+            if data.empty:
+                self.table_widget.setRowCount(0)
+                self.table_widget.setColumnCount(0)
+                return
             self.table_widget.setRowCount(data.shape[0])
             self.table_widget.setColumnCount(data.shape[1])
             self.table_widget.setHorizontalHeaderLabels(list(data.columns))
@@ -166,7 +176,10 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
     def get_table_data(self):
         rows = self.table_widget.rowCount()
         cols = self.table_widget.columnCount()
-        headers = [self.table_widget.horizontalHeaderItem(j).text() for j in range(cols)]
+        try:
+            headers = [self.table_widget.horizontalHeaderItem(j).text() for j in range(cols)]
+        except Exception as e:
+            headers = [f"Column {j+1}" for j in range(cols)]
         data = []
         for i in range(rows):
             row = []
@@ -180,7 +193,11 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         if not self.current_file_path:
             self.save_file_as()
             return
-        self.write_data(self.get_table_data(), self.current_file_path)
+        try:
+            self.write_data(self.get_table_data(), self.current_file_path)
+        except Exception as _:
+            with open(self.current_file_path, 'w') as f:
+                f.write('') 
 
     def save_file_as(self):
         file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
