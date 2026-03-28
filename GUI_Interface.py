@@ -3,6 +3,7 @@ import file_reader
 import pandas as pd
 import PyQt6.QtWidgets as QtWidgets
 import PyQt6.QtGui as QtGui
+import PyQt6.QtCore as QtCore
 
 
 class CSVEditorWindow(QtWidgets.QMainWindow):
@@ -39,6 +40,19 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         self.table_widget = QtWidgets.QTableWidget()
         self.vertical_layout.addWidget(self.table_widget)
+
+        self.table_widget.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table_widget.customContextMenuRequested.connect(self.show_context_menu)
+
+        # Horizontal (column) header
+        self.table_widget.horizontalHeader().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table_widget.horizontalHeader().customContextMenuRequested.connect(self.show_column_header_context_menu)
+        self.table_widget.horizontalHeader().sectionClicked.connect(self.on_column_header_clicked)
+
+        # Vertical (row) header
+        self.table_widget.verticalHeader().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table_widget.verticalHeader().customContextMenuRequested.connect(self.show_row_header_context_menu)
+        self.table_widget.verticalHeader().sectionClicked.connect(self.on_row_header_clicked)
 
         # Ctrl+S shortcut
         save_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+S"), self)
@@ -92,6 +106,48 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             self.current_file_path = file_path
             self.file_path_label.setText(file_path)
             file_reader.write_data(self.get_table_data(), file_path)
+    def show_context_menu(self, position):
+        menu = QtWidgets.QMenu(self)
+        add_right = menu.addAction("Add a Column to the Right")
+        add_left = menu.addAction("Add a Column to the Left")
+        add_below = menu.addAction("Add a Row below")
+        add_above = menu.addAction("Add a Row above")
+        delete_row = menu.addAction("Delete this Row")
+        delete_column = menu.addAction("Delete this Column")
+        menu.exec(self.table_widget.viewport().mapToGlobal(position))
+
+    def show_column_header_context_menu(self, position):
+        col = self.table_widget.horizontalHeader().logicalIndexAt(position)
+        menu = QtWidgets.QMenu(self)
+        delete_action = menu.addAction("Delete Column")
+        cur_column_count = self.table_widget.columnCount()
+        add_column_left = menu.addAction("Add Column to the Left")
+        add_column_right = menu.addAction("Add Column to the Right")
+        delete_action.triggered.connect(lambda: self.table_widget.removeColumn(col))
+        add_column_left.triggered.connect(lamda: self.table_widget)
+
+        menu.exec(self.table_widget.horizontalHeader().mapToGlobal(position))
+
+
+    def on_column_header_clicked(self, col):
+        print(f"Left clicked column {col}: {self.table_widget.horizontalHeaderItem(col).text()}")
+
+    def show_row_header_context_menu(self, position):
+        row = self.table_widget.verticalHeader().logicalIndexAt(position)
+        menu = QtWidgets.QMenu(self)
+
+        delete_action = menu.addAction("Delete Row")
+        insert_above_action = menu.addAction("Insert Row Above")
+        insert_below_action = menu.addAction("Insert Row Below")
+
+        delete_action.triggered.connect(lambda: self.delete_row(row))
+        insert_above_action.triggered.connect(lambda: self.insert_row(row))
+        insert_below_action.triggered.connect(lambda: self.insert_row(row + 1))
+
+        menu.exec(self.table_widget.verticalHeader().mapToGlobal(position))
+
+    def on_row_header_clicked(self, row):
+        print(f"Left clicked row {row}")
 
 
 def create_window():
