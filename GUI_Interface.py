@@ -148,13 +148,11 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
     def toggle_autosave(self, checked):
         if checked:
-            # Block autosave if no file path exists
             if not self.current_file_path:
                 QtWidgets.QMessageBox.warning(
                     self, "Autosave Unavailable",
                     "Please save the file first before enabling autosave."
                 )
-                # Uncheck without triggering this signal again
                 self.autosave_button.blockSignals(True)
                 self.autosave_button.setChecked(False)
                 self.autosave_button.blockSignals(False)
@@ -263,10 +261,8 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         df = pd.DataFrame(data, columns=headers)
 
-        # Drop completely empty rows
         df = df[~df.apply(lambda row: all(v == "" for v in row), axis=1)]
 
-        # Drop completely empty columns
         non_empty_cols = [
             j for j, h in enumerate(df.columns)
             if h != "" or df.iloc[:, j].apply(lambda v: v != "").any()
@@ -380,6 +376,15 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
                 event.ignore()
         else:
             event.accept()
+
+    def keyPressEvent(self, event):
+        if event.key() in (QtCore.Qt.Key.Key_Delete, QtCore.Qt.Key.Key_Backspace):
+            selected = self.table_widget.selectedItems()
+            if selected:
+                for item in selected:
+                    item.setText("")
+        else:
+            super().keyPressEvent(event)
 
 
 def create_window():
