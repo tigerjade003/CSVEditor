@@ -72,25 +72,20 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.table_widget.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_widget.customContextMenuRequested.connect(self.show_context_menu)
 
-        # Horizontal (column) header
         self.table_widget.horizontalHeader().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_widget.horizontalHeader().customContextMenuRequested.connect(self.show_column_header_context_menu)
         self.table_widget.horizontalHeader().sectionClicked.connect(self.on_column_header_clicked)
 
-        # Vertical (row) header
         self.table_widget.verticalHeader().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_widget.verticalHeader().customContextMenuRequested.connect(self.show_row_header_context_menu)
         self.table_widget.verticalHeader().sectionClicked.connect(self.on_row_header_clicked)
 
-        # Ctrl+S shortcut
         save_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+S"), self)
         save_shortcut.activated.connect(self.save_file)
 
-        # Ctrl+Shift+S shortcut
         save_as_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+S"), self)
         save_as_shortcut.activated.connect(self.save_file_as)
 
-        # Undo/Redo
         self.undo_stack = QtGui.QUndoStack(self)
 
         undo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
@@ -117,6 +112,12 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         if path is None:
             raise ValueError("Path must be provided.")
         data.to_csv(path, index=False)
+
+    def toggleFullScreen(self):
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
 
     def open_file(self):
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
