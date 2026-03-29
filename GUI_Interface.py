@@ -3,6 +3,7 @@ import pandas as pd
 import PyQt6.QtWidgets as QtWidgets
 import PyQt6.QtGui as QtGui
 import PyQt6.QtCore as QtCore
+import os
 
 EXTRA_ROWS = 100
 EXTRA_COLS = 10
@@ -168,7 +169,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         self.new_file()
 
-    # ── Find / Replace ──────────────────────────────────────────────────────
 
     def open_find_bar(self):
         self.find_bar.setVisible(True)
@@ -263,7 +263,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
                 item.setText(item.text().replace(query, replacement))
         self._run_search()
 
-    # ── File / Table helpers ────────────────────────────────────────────────
 
     def new_file(self):
         self.current_file_path = None
@@ -534,12 +533,56 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
                 self.close_find_bar()
         else:
             super().keyPressEvent(event)
+    
+    def open_file_from_path(self, file_path):
+        self._is_modified = False
+        self.undo_stack.clear()
+        self.current_file_path = file_path
+        self.file_path_label.setText(file_path)
+        self.save_button.setVisible(True)
+        self.save_as_button.setVisible(True)
+        data = self.get_data(file_path)
+
+        if data.empty:
+            self.table_widget.setRowCount(EXTRA_ROWS)
+            self.table_widget.setColumnCount(EXTRA_COLS)
+            self.set_column_headers(EXTRA_COLS)
+            return
+
+        num_cols = data.shape[1] + EXTRA_COLS
+        num_rows = data.shape[0] + 1 + EXTRA_ROWS
+
+        self.table_widget.setRowCount(num_rows)
+        self.table_widget.setColumnCount(num_cols)
+        self.set_column_headers(num_cols)
+
+        for j, col_name in enumerate(data.columns):
+            self.table_widget.setItem(0, j, QtWidgets.QTableWidgetItem(str(col_name)))
+
+        for i in range(data.shape[0]):
+            for j in range(data.shape[1]):
+                self.table_widget.setItem(
+                    i + 1, j, QtWidgets.QTableWidgetItem(str(data.iloc[i, j]))
+                )
 
 
 def create_window():
     app = QtWidgets.QApplication(sys.argv)
     window = CSVEditorWindow()
     window.show()
+    app.exec()
+
+def create_window():
+    app = QtWidgets.QApplication(sys.argv)
+    window = CSVEditorWindow()
+    window.show()
+
+    # If a file path was passed (e.g. from right-click context menu), open it
+    if len(sys.argv) > 1:
+        file_path = sys.argv[1]
+        if os.path.exists(file_path) and file_path.endswith(".csv"):
+            window.open_file_from_path(file_path)
+
     app.exec()
 
 
