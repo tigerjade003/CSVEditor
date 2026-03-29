@@ -50,6 +50,8 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self._is_undoing = False
         self._is_modified = False
         self.autosave_timer = None
+        self._search_matches = []
+        self._search_index = 0
 
         self.central_widget = QtWidgets.QWidget()
         self.setCentralWidget(self.central_widget)
@@ -57,6 +59,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.vertical_layout = QtWidgets.QVBoxLayout()
         self.central_widget.setLayout(self.vertical_layout)
 
+        # Toolbar
         self.toolbar_layout = QtWidgets.QHBoxLayout()
         self.vertical_layout.addLayout(self.toolbar_layout)
 
@@ -82,6 +85,7 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         self.file_path_label = QtWidgets.QLabel("New File")
         self.toolbar_layout.addWidget(self.file_path_label)
 
+        # Table
         self.table_widget = QtWidgets.QTableWidget()
         self.vertical_layout.addWidget(self.table_widget)
         self.table_widget.itemChanged.connect(self.on_cell_changed)
@@ -97,6 +101,54 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
 
         self.table_widget.setStyleSheet("QTableWidget QLineEdit { background-color: black; }")
 
+        # Find/Replace bar (hidden by default)
+        self.find_bar = QtWidgets.QWidget()
+        self.find_bar.setVisible(False)
+        find_bar_layout = QtWidgets.QHBoxLayout()
+        find_bar_layout.setContentsMargins(4, 4, 4, 4)
+        self.find_bar.setLayout(find_bar_layout)
+
+        find_bar_layout.addWidget(QtWidgets.QLabel("Find:"))
+        self.find_input = QtWidgets.QLineEdit()
+        self.find_input.setPlaceholderText("Search...")
+        self.find_input.textChanged.connect(self.on_search_text_changed)
+        self.find_input.returnPressed.connect(self.find_next)
+        find_bar_layout.addWidget(self.find_input)
+
+        self.find_prev_button = QtWidgets.QPushButton("▲")
+        self.find_prev_button.setFixedWidth(30)
+        self.find_prev_button.clicked.connect(self.find_prev)
+        find_bar_layout.addWidget(self.find_prev_button)
+
+        self.find_next_button = QtWidgets.QPushButton("▼")
+        self.find_next_button.setFixedWidth(30)
+        self.find_next_button.clicked.connect(self.find_next)
+        find_bar_layout.addWidget(self.find_next_button)
+
+        self.match_label = QtWidgets.QLabel("")
+        find_bar_layout.addWidget(self.match_label)
+
+        find_bar_layout.addWidget(QtWidgets.QLabel("Replace:"))
+        self.replace_input = QtWidgets.QLineEdit()
+        self.replace_input.setPlaceholderText("Replace with...")
+        find_bar_layout.addWidget(self.replace_input)
+
+        self.replace_button = QtWidgets.QPushButton("Replace")
+        self.replace_button.clicked.connect(self.replace_current)
+        find_bar_layout.addWidget(self.replace_button)
+
+        self.replace_all_button = QtWidgets.QPushButton("Replace All")
+        self.replace_all_button.clicked.connect(self.replace_all)
+        find_bar_layout.addWidget(self.replace_all_button)
+
+        self.close_find_button = QtWidgets.QPushButton("✕")
+        self.close_find_button.setFixedWidth(30)
+        self.close_find_button.clicked.connect(self.close_find_bar)
+        find_bar_layout.addWidget(self.close_find_button)
+
+        self.vertical_layout.addWidget(self.find_bar)
+
+        # Shortcuts
         save_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+S"), self)
         save_shortcut.activated.connect(self.save_file)
 
@@ -111,7 +163,107 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
         redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
         redo_shortcut.activated.connect(self.undo_stack.redo)
 
+        find_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+F"), self)
+        find_shortcut.activated.connect(self.open_find_bar)
+
         self.new_file()
+
+    # ── Find / Replace ──────────────────────────────────────────────────────
+
+    def open_find_bar(self):
+        self.find_bar.setVisible(True)
+        self.find_input.setFocus()
+        self.find_input.selectAll()
+        self._run_search()
+
+    def close_find_bar(self):
+        self.find_bar.setVisible(False)
+        self._clear_highlights()
+        self._search_matches = []
+        self.match_label.setText("")
+        self.table_widget.setFocus()
+
+    def on_search_text_changed(self):
+        self._search_index = 0
+        self._run_search()
+
+    def _run_search(self):
+        self._clear_highlights()
+        self._search_matches = []
+        query = self.find_input.text()
+        if not query:
+            self.match_label.setText("")
+            return
+
+        rows = self.table_widget.rowCount()
+        cols = self.table_widget.columnCount()
+        for r in range(rows):
+            for c in range(cols):
+                item = self.table_widget.item(r, c)
+                if item and query.lower() in item.text().lower():
+                    self._search_matches.append((r, c))
+                    item.setBackground(QtGui.QColor("#7a6000"))  # dim gold highlight
+
+        if self._search_matches:
+            self._search_index = min(self._search_index, len(self._search_matches) - 1)
+            self._highlight_current()
+        else:
+            self.match_label.setText("No matches")
+
+    def _highlight_current(self):
+        if not self._search_matches:
+            return
+        r, c = self._search_matches[self._search_index]
+        self.table_widget.scrollToItem(self.table_widget.item(r, c))
+        self.table_widget.setCurrentCell(r, c)
+        # Brighten the current match
+        for i, (mr, mc) in enumerate(self._search_matches):
+            color = "#f0c000" if i == self._search_index else "#7a6000"
+            item = self.table_widget.item(mr, mc)
+            if item:
+                item.setBackground(QtGui.QColor(color))
+        self.match_label.setText(f"{self._search_index + 1} / {len(self._search_matches)}")
+
+    def _clear_highlights(self):
+        for r, c in self._search_matches:
+            item = self.table_widget.item(r, c)
+            if item:
+                item.setBackground(QtGui.QColor("transparent"))
+
+    def find_next(self):
+        if not self._search_matches:
+            return
+        self._search_index = (self._search_index + 1) % len(self._search_matches)
+        self._highlight_current()
+
+    def find_prev(self):
+        if not self._search_matches:
+            return
+        self._search_index = (self._search_index - 1) % len(self._search_matches)
+        self._highlight_current()
+
+    def replace_current(self):
+        if not self._search_matches:
+            return
+        r, c = self._search_matches[self._search_index]
+        item = self.table_widget.item(r, c)
+        if item:
+            new_text = item.text().replace(self.find_input.text(), self.replace_input.text())
+            item.setText(new_text)
+        self._run_search()
+
+    def replace_all(self):
+        if not self._search_matches:
+            return
+        query = self.find_input.text()
+        replacement = self.replace_input.text()
+        for r, c in list(self._search_matches):
+            item = self.table_widget.item(r, c)
+            if item:
+                item.setText(item.text().replace(query, replacement))
+        self._run_search()
+
+    # ── File / Table helpers ────────────────────────────────────────────────
 
     def new_file(self):
         self.current_file_path = None
@@ -158,7 +310,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
                 self.autosave_button.blockSignals(False)
                 self.autosave_button.setText("Autosave: Off")
                 return
-
             self.autosave_button.setText("Autosave: On")
             self.autosave_timer = QtCore.QTimer(self)
             self.autosave_timer.setInterval(2000)
@@ -207,7 +358,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
     def open_file(self):
         if not self._check_unsaved_changes():
             return
-
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Open File", "", "CSV Files (*.csv)"
         )
@@ -260,15 +410,12 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             data.append(row)
 
         df = pd.DataFrame(data, columns=headers)
-
         df = df[~df.apply(lambda row: all(v == "" for v in row), axis=1)]
-
         non_empty_cols = [
             j for j, h in enumerate(df.columns)
             if h != "" or df.iloc[:, j].apply(lambda v: v != "").any()
         ]
         df = df.iloc[:, non_empty_cols]
-
         return df
 
     def save_file(self):
@@ -359,7 +506,6 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             self.save_file()
             event.accept()
             return
-
         if self._is_modified:
             reply = QtWidgets.QMessageBox.question(
                 self, "Quit", "Save before closing?",
@@ -383,6 +529,9 @@ class CSVEditorWindow(QtWidgets.QMainWindow):
             if selected:
                 for item in selected:
                     item.setText("")
+        elif event.key() == QtCore.Qt.Key.Key_Escape:
+            if self.find_bar.isVisible():
+                self.close_find_bar()
         else:
             super().keyPressEvent(event)
 
